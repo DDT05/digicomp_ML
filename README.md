@@ -202,88 +202,57 @@ print("Meilleur score:", grid_search.best_score_)
 best_model = grid_search.best_estimator_
 ```
 
-## Cas 2: Segmentation de clients pour recommandation de produits (Unsupervised Learning)
+## Cas 2: Segmentation des espèces florales avec le cas d'usage Iris. (Unsupervised Learning)
 
-### Objectif
-Segmenter les clients bancaires en groupes distincts pour faciliter la recommandation de produits financiers adaptés à chaque segment.
+### Objectif  
+Identifier automatiquement les différentes espèces de fleurs **Iris** à partir de leurs caractéristiques morphologiques, en utilisant l'algorithme de clustering K-Means.
 
-### Données
-Nous utiliserons le dataset `bank-marketing` qui contient des informations démographiques et comportementales sur des clients bancaires:
+### Données  
+Nous utiliserons le dataset `iris`, un jeu de données classique en apprentissage machine, contenant des mesures de fleurs appartenant à trois espèces différentes :  
+- Caractéristiques mesurées :
+  - Longueur et largeur des sépales (`sepal length`, `sepal width`)
+  - Longueur et largeur des pétales (`petal length`, `petal width`)
+- Les étiquettes des espèces sont disponibles (Setosa, Versicolor, Virginica), mais elles seront ignorées pour l'apprentissage non supervisé.
 
-- Information démographiques (âge, emploi, statut matrimonial, etc.)
-- Informations de contact et campagnes marketing
-- Données économiques du client
 
-### Approche étape par étape
-
-#### 1. Chargement et exploration des données
-
-```python
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.datasets import fetch_openml
-from sklearn.preprocessing import StandardScaler, OneHotEncoder
-from sklearn.compose import ColumnTransformer
+from sklearn.datasets import load_iris
+from sklearn.preprocessing import StandardScaler
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 
-# Charger les données
-bank_data = fetch_openml(name='bank-marketing', version=1, as_frame=True)
-bank_df = bank_data.data
-
-# Supprimer la colonne cible si présente (nous faisons du non supervisé)
-if 'y' in bank_df.columns:
-    bank_df = bank_df.drop('y', axis=1)
+# Charger le dataset iris
+iris = load_iris()
+iris_df = pd.DataFrame(data=iris.data, columns=iris.feature_names)
 
 # Afficher les premières lignes
-print(bank_df.head())
+print("Premières lignes du dataset Iris:")
+print(iris_df.head())
 
 # Statistiques descriptives
-print(bank_df.describe())
+print("\nStatistiques descriptives:")
+print(iris_df.describe())
 
 # Vérifier les valeurs manquantes
-print(bank_df.isnull().sum())
+print("\nVérification des valeurs manquantes:")
+print(iris_df.isnull().sum())
 
 # Information sur les colonnes
-print(bank_df.info())
-```
+print("\nInformations sur les colonnes:")
+print(iris_df.info())
 
-#### 2. Prétraitement des données
+# Standardiser les données
+scaler = StandardScaler()
+iris_scaled = scaler.fit_transform(iris_df)
 
-```python
-# Identifier les colonnes numériques et catégorielles
-numeric_features = bank_df.select_dtypes(include=['int64', 'float64']).columns
-categorical_features = bank_df.select_dtypes(include=['object', 'category']).columns
-
-# Nous utilisons uniquement certaines colonnes d'intérêt pour le clustering
-selected_numeric = ['age', 'balance', 'duration', 'campaign', 'pdays', 'previous']
-selected_categorical = ['job', 'marital', 'education', 'housing', 'loan']
-
-# Définir les préprocesseurs
-numeric_transformer = StandardScaler()
-categorical_transformer = OneHotEncoder(drop='first', handle_unknown='ignore')
-
-# Créer un préprocesseur pour toutes les colonnes
-preprocessor = ColumnTransformer(
-    transformers=[
-        ('num', numeric_transformer, selected_numeric),
-        ('cat', categorical_transformer, selected_categorical)
-    ])
-
-# Appliquer la transformation
-bank_df_processed = preprocessor.fit_transform(bank_df)
-```
-
-#### 3. Détermination du nombre optimal de clusters (méthode du coude)
-
-```python
 # Méthode du coude pour déterminer le nombre optimal de clusters
 inertia = []
 for k in range(1, 11):
     kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
-    kmeans.fit(bank_df_processed)
+    kmeans.fit(iris_scaled)
     inertia.append(kmeans.inertia_)
 
 # Visualisation de la méthode du coude
@@ -293,170 +262,89 @@ plt.xlabel('Nombre de clusters')
 plt.ylabel('Inertie')
 plt.title('Méthode du coude pour déterminer le nombre optimal de clusters')
 plt.grid(True)
-plt.savefig('elbow_method.png')
+plt.savefig('elbow_method_iris.png')
 plt.show()
-```
 
-#### 4. Création des clusters
-
-```python
-# Nombre optimal de clusters (à déterminer après visualisation de la méthode du coude)
-n_clusters = 4  # À ajuster selon la méthode du coude
+# Nombre optimal de clusters (pour Iris, nous savons que c'est 3)
+n_clusters = 3
 
 # Création du modèle K-means
 kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-cluster_labels = kmeans.fit_predict(bank_df_processed)
+cluster_labels = kmeans.fit_predict(iris_scaled)
 
 # Ajouter les labels des clusters au dataframe original
-bank_df['Cluster'] = cluster_labels
-```
+iris_df['Cluster'] = cluster_labels
 
-#### 5. Visualisation et analyse des clusters
-
-```python
 # Réduction de dimension pour visualisation (PCA)
 pca = PCA(n_components=2)
-principal_components = pca.fit_transform(bank_df_processed)
+principal_components = pca.fit_transform(iris_scaled)
 pca_df = pd.DataFrame(data=principal_components, columns=['PC1', 'PC2'])
 pca_df['Cluster'] = cluster_labels
 
 # Visualisation des clusters
 plt.figure(figsize=(10, 8))
 sns.scatterplot(x='PC1', y='PC2', hue='Cluster', data=pca_df, palette='viridis', s=100)
-plt.title('Visualisation des clusters de clients')
-plt.savefig('customer_clusters.png')
+plt.title('Visualisation des clusters de fleurs Iris')
+plt.savefig('iris_clusters.png')
 plt.show()
 
-# Analyse des caractéristiques numériques par cluster
-cluster_analysis_num = bank_df.groupby('Cluster')[selected_numeric].mean()
-print(cluster_analysis_num)
+# Analyse des caractéristiques par cluster
+cluster_analysis = iris_df.groupby('Cluster').mean()
+print("\nCaractéristiques moyennes par cluster:")
+print(cluster_analysis)
 
-# Visualisation des caractéristiques numériques moyennes par cluster
+# Visualisation des caractéristiques moyennes par cluster
 plt.figure(figsize=(14, 10))
-cluster_analysis_num.T.plot(kind='bar', figsize=(14, 8))
-plt.title('Caractéristiques numériques moyennes par cluster')
+cluster_analysis.T.plot(kind='bar', figsize=(14, 8))
+plt.title('Caractéristiques moyennes par cluster de fleurs Iris')
 plt.ylabel('Valeur moyenne')
 plt.xlabel('Caractéristiques')
 plt.legend(title='Cluster')
 plt.tight_layout()
-plt.savefig('cluster_characteristics.png')
+plt.savefig('iris_cluster_characteristics.png')
 plt.show()
 
-# Analyse des caractéristiques catégorielles par cluster
-for cat_feature in selected_categorical:
-    plt.figure(figsize=(12, 6))
-    for i in range(n_clusters):
-        plt.subplot(1, n_clusters, i+1)
-        cluster_data = bank_df[bank_df['Cluster'] == i]
-        cluster_data[cat_feature].value_counts(normalize=True).plot(kind='pie', 
-                                                                  autopct='%1.1f%%',
-                                                                  title=f'Cluster {i}: {cat_feature}')
-    plt.tight_layout()
-    plt.savefig(f'cluster_{cat_feature}_distribution.png')
-    plt.show()
-```
+# Interprétation des clusters (nous connaissons les vraies classes)
+true_labels = iris.target
+cluster_mapping = {}
+for i in range(n_clusters):
+    cluster_indices = np.where(cluster_labels == i)[0]
+    most_common_label = np.bincount(true_labels[cluster_indices]).argmax()
+    cluster_mapping[i] = iris.target_names[most_common_label]
 
-#### 6. Interprétation des clusters et recommandations de produits
+print("\nInterprétation des clusters (correspondance avec les vraies espèces):")
+for cluster, species in cluster_mapping.items():
+    print(f"Cluster {cluster}: Principalement {species}")
 
-```python
-# Analyse détaillée de chaque cluster
-cluster_profiles = pd.DataFrame(index=range(n_clusters))
+# Visualisation comparant les clusters au vrai étiquetage
+plt.figure(figsize=(12, 5))
+plt.subplot(1, 2, 1)
+sns.scatterplot(x=principal_components[:, 0], y=principal_components[:, 1], 
+                hue=cluster_labels, palette='viridis', s=100)
+plt.title('Clusters KMeans')
 
-# Taille des clusters
-cluster_profiles['Taille'] = bank_df['Cluster'].value_counts().sort_index().values
+plt.subplot(1, 2, 2)
+sns.scatterplot(x=principal_components[:, 0], y=principal_components[:, 1], 
+                hue=iris.target, palette='viridis', s=100)
+plt.title('Classification réelle')
+plt.tight_layout()
+plt.savefig('iris_cluster_vs_real.png')
+plt.show()
 
-# Caractéristiques moyennes par cluster
-for col in selected_numeric:
-    cluster_profiles[col] = bank_df.groupby('Cluster')[col].mean().values
-
-# Modes des catégories par cluster
-for col in selected_categorical:
-    for i in range(n_clusters):
-        cluster_profiles.loc[i, f'{col}_principal'] = bank_df[bank_df['Cluster'] == i][col].mode()[0]
-
-print(cluster_profiles)
-
-# Exemple d'interprétation des clusters et définition de stratégies de recommandation
-# À ajuster en fonction des résultats réels
-clusters_interpretation = {
-    0: "Jeunes actifs avec prêts: Solutions d'épargne progressive",
-    1: "Clients établis avec équilibre financier: Investissements et épargne retraite",
-    2: "Clients avec besoins de financement: Consolidation de prêts et assurances",
-    3: "Clients seniors avec patrimoine: Services premium et gestion de patrimoine"
+# Recommandations par cluster (exemple)
+recommendations = {
+    0: ["Entretien minimal", "Environnement sec", "Peu d'arrosage"],
+    1: ["Entretien modéré", "Environnement mi-ombragé", "Arrosage régulier"],
+    2: ["Entretien soigneux", "Environnement humide", "Arrosage fréquent"]
 }
 
-# Affichage des interprétations
-for cluster, interpretation in clusters_interpretation.items():
-    print(f"Cluster {cluster}: {interpretation}")
-    
-# Création d'une fonction de recommandation basique
-def recommend_products(cluster_id):
-    recommendations = {
-        0: ["Épargne progressive", "Applications bancaires mobiles", "Cartes à cashback"],
-        1: ["Fonds d'investissement", "Assurance vie", "Épargne retraite"],
-        2: ["Consolidation de prêts", "Assurance emprunteur", "Refinancement hypothécaire"],
-        3: ["Gestion de patrimoine", "Services bancaires premium", "Planification successorale"]
-    }
-    return recommendations.get(cluster_id, "Cluster non reconnu")
-
-# Test de la fonction de recommandation
+print("\nRecommandations d'entretien par cluster:")
 for i in range(n_clusters):
-    print(f"Recommandations pour le cluster {i}:")
-    print(recommend_products(i))
-    print("---")
-```
+    print(f"Cluster {i} ({cluster_mapping[i]}):")
+    for rec in recommendations[i]:
+        print(f"- {rec}")
+    print()
 
-## Visualisation finale intégrée
-
-```python
-# Ce code assume que vous avez déjà les deux modèles créés précédemment
-import matplotlib.pyplot as plt
-import numpy as np
-
-# Créer une figure avec deux sous-graphiques
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
-
-# Premier graphique: Matrice de confusion (cas 1)
-sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', 
-            xticklabels=['Bon payeur', 'Mauvais payeur'], 
-            yticklabels=['Bon payeur', 'Mauvais payeur'], ax=ax1)
-ax1.set_title('Prédiction de défaut de paiement')
-ax1.set_xlabel('Prédiction')
-ax1.set_ylabel('Réel')
-
-# Second graphique: Clusters (cas 2)
-scatter = ax2.scatter(principal_components[:, 0], principal_components[:, 1], 
-                     c=cluster_labels, cmap='viridis', s=50, alpha=0.8)
-ax2.set_title('Segmentation des clients')
-ax2.set_xlabel('Composante principale 1')
-ax2.set_ylabel('Composante principale 2')
-legend = ax2.legend(*scatter.legend_elements(), title="Clusters")
-ax2.add_artist(legend)
-
-# Ajouter un titre global
-fig.suptitle('Analyse financière: Prédiction de défaut et Segmentation clients', fontsize=16)
-plt.tight_layout()
-plt.savefig('finance_ml_combined_analysis.png', dpi=300)
-plt.show()
-```
-
-## Note importante sur les datasets
-
-Les datasets utilisés dans ce projet sont accessibles via scikit-learn:
-
-1. Pour le dataset `credit-g` (German Credit Data):
-```python
-from sklearn.datasets import fetch_openml
-credit_data = fetch_openml(name='credit-g', version=1, as_frame=True)
-```
-
-2. Pour le dataset `bank-marketing`:
-```python
-from sklearn.datasets import fetch_openml
-bank_data = fetch_openml(name='bank-marketing', version=1, as_frame=True)
-```
-
-Ces datasets seront automatiquement téléchargés lors de la première exécution.
 
 ## Conclusion
 
@@ -464,7 +352,7 @@ Ces deux cas pratiques démontrent l'application du machine learning à des prob
 
 1. **Apprentissage supervisé**: Nous avons développé un modèle de classification pour prédire les défauts de paiement, permettant à l'institution financière d'évaluer le risque associé à chaque client.
 
-2. **Apprentissage non supervisé**: Nous avons segmenté les clients en clusters distincts pour faciliter la personnalisation des offres et recommandations de produits.
+2. **Apprentissage non supervisé**: Nous avons segmenté les espèces de fleurs en clusters distincts pour faciliter la distinction et la compréhension des caractéristiques de celles-ci. 
 
 Les étudiants peuvent adapter ces exemples en modifiant les paramètres des modèles ou en explorant d'autres algorithmes (comme les SVM, les réseaux de neurones pour la classification, ou DBSCAN pour le clustering).
 
