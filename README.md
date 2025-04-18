@@ -214,7 +214,7 @@ Nous utiliserons le dataset `iris`, un jeu de données classique en apprentissag
   - Longueur et largeur des pétales (`petal length`, `petal width`)
 - Les étiquettes des espèces sont disponibles (Setosa, Versicolor, Virginica), mais elles seront ignorées pour l'apprentissage non supervisé.
 
-
+```python
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -344,7 +344,7 @@ for i in range(n_clusters):
     for rec in recommendations[i]:
         print(f"- {rec}")
     print()
-
+```
 
 ## Conclusion
 
