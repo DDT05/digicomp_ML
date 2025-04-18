@@ -1,8 +1,8 @@
 # Cas Pratiques de Machine Learning en Finance
 
 Ce projet propose deux cas d'usage de machine learning appliqués au domaine financier:
-1. **Prédiction de défaut de paiement** (apprentissage supervisé)
-2. **Segmentation de clients pour recommandation de produits** (apprentissage non supervisé)
+1. **Prédiction de défaut de paiement** (apprentissage supervisé) avec le dataset `credit-g`
+2. **Segmentation de clients pour recommandation de produits** (apprentissage non supervisé) avec le dataset `bank-marketing`
 
 ## Prérequis
 
@@ -16,15 +16,12 @@ pip install pandas numpy matplotlib seaborn scikit-learn jupyter
 Développer un modèle qui prédit la probabilité qu'un client ne rembourse pas son prêt en fonction de ses caractéristiques financières et personnelles.
 
 ### Données
-Nous utiliserons un dataset contenant les informations suivantes pour chaque client:
-- Âge
-- Revenu annuel
-- Montant du prêt
-- Durée du prêt
-- Taux d'endettement
-- Historique de crédit (nombre de défauts précédents)
-- Ancienneté professionnelle
-- Variable cible: défaut de paiement (1 = défaut, 0 = remboursement complet)
+Nous utiliserons le dataset `credit-g` (également connu sous le nom "German Credit Data"), qui contient des informations sur des demandeurs de prêt:
+
+- Attributs personnels (âge, statut matrimonial, etc.)
+- Historique de crédit
+- Détails du prêt demandé
+- Variable cible: risque de crédit (good = bon payeur, bad = mauvais payeur)
 
 ### Approche étape par étape
 
@@ -35,55 +32,79 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+from sklearn.datasets import fetch_openml
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import classification_report, confusion_matrix, roc_curve, auc
 
 # Charger les données
-df = pd.read_csv("credit_data.csv")  # Remplacer par le chemin de vos données
+credit_data = fetch_openml(name='credit-g', version=1, as_frame=True)
+X = credit_data.data
+y = credit_data.target
+
+# Convertir la cible en valeurs numériques
+y = y.map({'good': 0, 'bad': 1})
 
 # Afficher les premières lignes
-print(df.head())
+print(X.head())
 
 # Statistiques descriptives
-print(df.describe())
+print(X.describe())
 
 # Vérifier les valeurs manquantes
-print(df.isnull().sum())
+print(X.isnull().sum())
+
+# Information sur les colonnes
+print(X.info())
+
+# Distribution de la variable cible
+plt.figure(figsize=(6, 4))
+sns.countplot(x=y)
+plt.title('Distribution des classes (0=bon payeur, 1=mauvais payeur)')
+plt.savefig('target_distribution.png')
+plt.show()
 ```
 
 #### 2. Prétraitement des données
 
 ```python
-# Traiter les valeurs manquantes (exemple)
-df.fillna(df.mean(), inplace=True)
+# Identifier les colonnes numériques et catégorielles
+numeric_features = X.select_dtypes(include=['int64', 'float64']).columns
+categorical_features = X.select_dtypes(include=['object', 'category']).columns
 
-# Séparer les features et la variable cible
-X = df.drop('default', axis=1)  # 'default' est la colonne cible
-y = df['default']
+# Définir les préprocesseurs pour chaque type de colonne
+numeric_transformer = StandardScaler()
+categorical_transformer = OneHotEncoder(drop='first', handle_unknown='ignore')
+
+# Créer un préprocesseur pour toutes les colonnes
+preprocessor = ColumnTransformer(
+    transformers=[
+        ('num', numeric_transformer, numeric_features),
+        ('cat', categorical_transformer, categorical_features)
+    ])
 
 # Division train/test
-X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
-
-# Standardisation des features
-scaler = StandardScaler()
-X_train_scaled = scaler.fit_transform(X_train)
-X_test_scaled = scaler.transform(X_test)
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42, stratify=y)
 ```
 
 #### 3. Entraînement du modèle
 
 ```python
-# Initialiser le modèle RandomForest
-model = RandomForestClassifier(n_estimators=100, random_state=42)
+# Créer le pipeline complet avec préprocessement et modèle
+pipeline = Pipeline(steps=[
+    ('preprocessor', preprocessor),
+    ('classifier', RandomForestClassifier(n_estimators=100, random_state=42))
+])
 
 # Entraîner le modèle
-model.fit(X_train_scaled, y_train)
+pipeline.fit(X_train, y_train)
 
 # Prédictions
-y_pred = model.predict(X_test_scaled)
-y_prob = model.predict_proba(X_test_scaled)[:, 1]
+y_pred = pipeline.predict(X_test)
+y_prob = pipeline.predict_proba(X_test)[:, 1]
 ```
 
 #### 4. Évaluation du modèle
@@ -93,8 +114,8 @@ y_prob = model.predict_proba(X_test_scaled)[:, 1]
 conf_matrix = confusion_matrix(y_test, y_pred)
 plt.figure(figsize=(8, 6))
 sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', 
-            xticklabels=['Remboursé', 'Défaut'], 
-            yticklabels=['Remboursé', 'Défaut'])
+            xticklabels=['Bon payeur', 'Mauvais payeur'], 
+            yticklabels=['Bon payeur', 'Mauvais payeur'])
 plt.xlabel('Prédiction')
 plt.ylabel('Réel')
 plt.title('Matrice de Confusion')
@@ -124,15 +145,23 @@ plt.show()
 #### 5. Analyse des features importantes
 
 ```python
-# Importance des features
-feature_importance = pd.DataFrame({
-    'Feature': X.columns,
-    'Importance': model.feature_importances_
-}).sort_values('Importance', ascending=False)
+# Extraire le modèle du pipeline
+model = pipeline.named_steps['classifier']
 
-plt.figure(figsize=(10, 6))
-sns.barplot(x='Importance', y='Feature', data=feature_importance)
-plt.title('Importance des caractéristiques dans la prédiction de défaut')
+# Récupérer les noms des features après préprocessing
+preprocessor = pipeline.named_steps['preprocessor']
+cat_features = preprocessor.transformers_[1][1].get_feature_names_out(categorical_features)
+feature_names = list(numeric_features) + list(cat_features)
+
+# Récupération et visualisation de l'importance des features
+importances = model.feature_importances_
+indices = np.argsort(importances)[-15:]  # Prendre les 15 plus importantes
+
+plt.figure(figsize=(10, 8))
+plt.title('15 caractéristiques les plus importantes')
+plt.barh(range(len(indices)), importances[indices], color='b', align='center')
+plt.yticks(range(len(indices)), [feature_names[i] for i in indices])
+plt.xlabel('Importance relative')
 plt.tight_layout()
 plt.savefig('feature_importance.png')
 plt.show()
@@ -143,21 +172,27 @@ plt.show()
 ```python
 from sklearn.model_selection import GridSearchCV
 
+# Définir un pipeline plus court pour la recherche sur grille
+pipeline_opt = Pipeline(steps=[
+    ('preprocessor', preprocessor),
+    ('classifier', RandomForestClassifier(random_state=42))
+])
+
 # Définir les hyperparamètres à tester
 param_grid = {
-    'n_estimators': [50, 100, 200],
-    'max_depth': [None, 10, 20, 30],
-    'min_samples_split': [2, 5, 10],
-    'min_samples_leaf': [1, 2, 4]
+    'classifier__n_estimators': [50, 100, 200],
+    'classifier__max_depth': [None, 10, 20],
+    'classifier__min_samples_split': [2, 5],
+    'classifier__min_samples_leaf': [1, 2]
 }
 
 # Recherche par grille
-grid_search = GridSearchCV(RandomForestClassifier(random_state=42), 
-                           param_grid, 
-                           cv=5, 
-                           scoring='roc_auc', 
-                           n_jobs=-1)
-grid_search.fit(X_train_scaled, y_train)
+grid_search = GridSearchCV(pipeline_opt, 
+                          param_grid, 
+                          cv=5, 
+                          scoring='roc_auc', 
+                          n_jobs=-1)
+grid_search.fit(X_train, y_train)
 
 # Meilleurs paramètres
 print("Meilleurs paramètres:", grid_search.best_params_)
@@ -170,18 +205,14 @@ best_model = grid_search.best_estimator_
 ## Cas 2: Segmentation de clients pour recommandation de produits (Unsupervised Learning)
 
 ### Objectif
-Segmenter les clients de la banque en groupes distincts pour faciliter la recommandation de produits financiers adaptés à chaque segment.
+Segmenter les clients bancaires en groupes distincts pour faciliter la recommandation de produits financiers adaptés à chaque segment.
 
 ### Données
-Nous utiliserons un dataset contenant les informations suivantes pour chaque client:
-- Âge
-- Revenu annuel
-- Solde moyen des comptes
-- Nombre de produits détenus
-- Montant des investissements
-- Montant d'épargne
-- Nombre de transactions mensuelles
-- Durée de la relation avec la banque
+Nous utiliserons le dataset `bank-marketing` qui contient des informations démographiques et comportementales sur des clients bancaires:
+
+- Information démographiques (âge, emploi, statut matrimonial, etc.)
+- Informations de contact et campagnes marketing
+- Données économiques du client
 
 ### Approche étape par étape
 
@@ -192,32 +223,57 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-from sklearn.preprocessing import StandardScaler
+from sklearn.datasets import fetch_openml
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
 from sklearn.cluster import KMeans
 from sklearn.decomposition import PCA
 
 # Charger les données
-df = pd.read_csv("customer_data.csv")  # Remplacer par le chemin de vos données
+bank_data = fetch_openml(name='bank-marketing', version=1, as_frame=True)
+bank_df = bank_data.data
+
+# Supprimer la colonne cible si présente (nous faisons du non supervisé)
+if 'y' in bank_df.columns:
+    bank_df = bank_df.drop('y', axis=1)
 
 # Afficher les premières lignes
-print(df.head())
+print(bank_df.head())
 
 # Statistiques descriptives
-print(df.describe())
+print(bank_df.describe())
 
 # Vérifier les valeurs manquantes
-print(df.isnull().sum())
+print(bank_df.isnull().sum())
+
+# Information sur les colonnes
+print(bank_df.info())
 ```
 
 #### 2. Prétraitement des données
 
 ```python
-# Traiter les valeurs manquantes (exemple)
-df.fillna(df.mean(), inplace=True)
+# Identifier les colonnes numériques et catégorielles
+numeric_features = bank_df.select_dtypes(include=['int64', 'float64']).columns
+categorical_features = bank_df.select_dtypes(include=['object', 'category']).columns
 
-# Standardisation des features
-scaler = StandardScaler()
-df_scaled = scaler.fit_transform(df)
+# Nous utilisons uniquement certaines colonnes d'intérêt pour le clustering
+selected_numeric = ['age', 'balance', 'duration', 'campaign', 'pdays', 'previous']
+selected_categorical = ['job', 'marital', 'education', 'housing', 'loan']
+
+# Définir les préprocesseurs
+numeric_transformer = StandardScaler()
+categorical_transformer = OneHotEncoder(drop='first', handle_unknown='ignore')
+
+# Créer un préprocesseur pour toutes les colonnes
+preprocessor = ColumnTransformer(
+    transformers=[
+        ('num', numeric_transformer, selected_numeric),
+        ('cat', categorical_transformer, selected_categorical)
+    ])
+
+# Appliquer la transformation
+bank_df_processed = preprocessor.fit_transform(bank_df)
 ```
 
 #### 3. Détermination du nombre optimal de clusters (méthode du coude)
@@ -227,7 +283,7 @@ df_scaled = scaler.fit_transform(df)
 inertia = []
 for k in range(1, 11):
     kmeans = KMeans(n_clusters=k, random_state=42, n_init=10)
-    kmeans.fit(df_scaled)
+    kmeans.fit(bank_df_processed)
     inertia.append(kmeans.inertia_)
 
 # Visualisation de la méthode du coude
@@ -249,10 +305,10 @@ n_clusters = 4  # À ajuster selon la méthode du coude
 
 # Création du modèle K-means
 kmeans = KMeans(n_clusters=n_clusters, random_state=42, n_init=10)
-cluster_labels = kmeans.fit_predict(df_scaled)
+cluster_labels = kmeans.fit_predict(bank_df_processed)
 
 # Ajouter les labels des clusters au dataframe original
-df['Cluster'] = cluster_labels
+bank_df['Cluster'] = cluster_labels
 ```
 
 #### 5. Visualisation et analyse des clusters
@@ -260,7 +316,7 @@ df['Cluster'] = cluster_labels
 ```python
 # Réduction de dimension pour visualisation (PCA)
 pca = PCA(n_components=2)
-principal_components = pca.fit_transform(df_scaled)
+principal_components = pca.fit_transform(bank_df_processed)
 pca_df = pd.DataFrame(data=principal_components, columns=['PC1', 'PC2'])
 pca_df['Cluster'] = cluster_labels
 
@@ -271,31 +327,62 @@ plt.title('Visualisation des clusters de clients')
 plt.savefig('customer_clusters.png')
 plt.show()
 
-# Analyse des caractéristiques par cluster
-cluster_analysis = df.groupby('Cluster').mean()
-print(cluster_analysis)
+# Analyse des caractéristiques numériques par cluster
+cluster_analysis_num = bank_df.groupby('Cluster')[selected_numeric].mean()
+print(cluster_analysis_num)
 
-# Visualisation des caractéristiques moyennes par cluster
+# Visualisation des caractéristiques numériques moyennes par cluster
 plt.figure(figsize=(14, 10))
-cluster_analysis.T.plot(kind='bar', figsize=(14, 8))
-plt.title('Caractéristiques moyennes par cluster')
+cluster_analysis_num.T.plot(kind='bar', figsize=(14, 8))
+plt.title('Caractéristiques numériques moyennes par cluster')
 plt.ylabel('Valeur moyenne')
 plt.xlabel('Caractéristiques')
 plt.legend(title='Cluster')
 plt.tight_layout()
 plt.savefig('cluster_characteristics.png')
 plt.show()
+
+# Analyse des caractéristiques catégorielles par cluster
+for cat_feature in selected_categorical:
+    plt.figure(figsize=(12, 6))
+    for i in range(n_clusters):
+        plt.subplot(1, n_clusters, i+1)
+        cluster_data = bank_df[bank_df['Cluster'] == i]
+        cluster_data[cat_feature].value_counts(normalize=True).plot(kind='pie', 
+                                                                  autopct='%1.1f%%',
+                                                                  title=f'Cluster {i}: {cat_feature}')
+    plt.tight_layout()
+    plt.savefig(f'cluster_{cat_feature}_distribution.png')
+    plt.show()
 ```
 
 #### 6. Interprétation des clusters et recommandations de produits
 
 ```python
+# Analyse détaillée de chaque cluster
+cluster_profiles = pd.DataFrame(index=range(n_clusters))
+
+# Taille des clusters
+cluster_profiles['Taille'] = bank_df['Cluster'].value_counts().sort_index().values
+
+# Caractéristiques moyennes par cluster
+for col in selected_numeric:
+    cluster_profiles[col] = bank_df.groupby('Cluster')[col].mean().values
+
+# Modes des catégories par cluster
+for col in selected_categorical:
+    for i in range(n_clusters):
+        cluster_profiles.loc[i, f'{col}_principal'] = bank_df[bank_df['Cluster'] == i][col].mode()[0]
+
+print(cluster_profiles)
+
 # Exemple d'interprétation des clusters et définition de stratégies de recommandation
+# À ajuster en fonction des résultats réels
 clusters_interpretation = {
-    0: "Clients à faible engagement: Produits simples et accessibles",
-    1: "Clients fortunés: Produits d'investissement premium",
-    2: "Clients actifs à revenu moyen: Produits d'épargne et assurances",
-    3: "Clients fidèles: Programmes de fidélité et services personnalisés"
+    0: "Jeunes actifs avec prêts: Solutions d'épargne progressive",
+    1: "Clients établis avec équilibre financier: Investissements et épargne retraite",
+    2: "Clients avec besoins de financement: Consolidation de prêts et assurances",
+    3: "Clients seniors avec patrimoine: Services premium et gestion de patrimoine"
 }
 
 # Affichage des interprétations
@@ -305,10 +392,10 @@ for cluster, interpretation in clusters_interpretation.items():
 # Création d'une fonction de recommandation basique
 def recommend_products(cluster_id):
     recommendations = {
-        0: ["Compte courant basique", "Carte de débit standard", "Application mobile simplifiée"],
-        1: ["Gestion de patrimoine", "Investissements internationaux", "Assurance-vie premium"],
-        2: ["Épargne programmée", "Crédit immobilier", "Assurance multirisque"],
-        3: ["Carte premium avec avantages", "Conseiller personnel dédié", "Produits d'épargne retraite"]
+        0: ["Épargne progressive", "Applications bancaires mobiles", "Cartes à cashback"],
+        1: ["Fonds d'investissement", "Assurance vie", "Épargne retraite"],
+        2: ["Consolidation de prêts", "Assurance emprunteur", "Refinancement hypothécaire"],
+        3: ["Gestion de patrimoine", "Services bancaires premium", "Planification successorale"]
     }
     return recommendations.get(cluster_id, "Cluster non reconnu")
 
@@ -321,8 +408,6 @@ for i in range(n_clusters):
 
 ## Visualisation finale intégrée
 
-Voici un exemple de visualisation qui combine les résultats des deux modèles:
-
 ```python
 # Ce code assume que vous avez déjà les deux modèles créés précédemment
 import matplotlib.pyplot as plt
@@ -333,8 +418,8 @@ fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
 
 # Premier graphique: Matrice de confusion (cas 1)
 sns.heatmap(conf_matrix, annot=True, fmt='d', cmap='Blues', 
-            xticklabels=['Remboursé', 'Défaut'], 
-            yticklabels=['Remboursé', 'Défaut'], ax=ax1)
+            xticklabels=['Bon payeur', 'Mauvais payeur'], 
+            yticklabels=['Bon payeur', 'Mauvais payeur'], ax=ax1)
 ax1.set_title('Prédiction de défaut de paiement')
 ax1.set_xlabel('Prédiction')
 ax1.set_ylabel('Réel')
@@ -355,6 +440,24 @@ plt.savefig('finance_ml_combined_analysis.png', dpi=300)
 plt.show()
 ```
 
+## Note importante sur les datasets
+
+Les datasets utilisés dans ce projet sont accessibles via scikit-learn:
+
+1. Pour le dataset `credit-g` (German Credit Data):
+```python
+from sklearn.datasets import fetch_openml
+credit_data = fetch_openml(name='credit-g', version=1, as_frame=True)
+```
+
+2. Pour le dataset `bank-marketing`:
+```python
+from sklearn.datasets import fetch_openml
+bank_data = fetch_openml(name='bank-marketing', version=1, as_frame=True)
+```
+
+Ces datasets seront automatiquement téléchargés lors de la première exécution.
+
 ## Conclusion
 
 Ces deux cas pratiques démontrent l'application du machine learning à des problématiques financières:
@@ -371,3 +474,5 @@ Les étudiants peuvent adapter ces exemples en modifiant les paramètres des mod
 - Explorer des techniques de feature engineering spécifiques aux données financières
 - Mettre en place un système de recommandation basé sur les clusters identifiés
 - Combiner les deux approches pour une stratégie marketing ciblée (par ex: identifier les produits à faible risque pour les clients à haut risque de défaut)
+- Utiliser des méthodes d'évaluation plus avancées comme la validation croisée stratifiée
+- Explorer d'autres méthodes de clustering comme DBSCAN ou l'analyse de clustering hiérarchique
