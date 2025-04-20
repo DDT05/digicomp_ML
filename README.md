@@ -2,7 +2,7 @@
 
 Ce projet propose deux cas d'usage de machine learning appliqués au domaine financier:
 1. **Prédiction de défaut de paiement** (apprentissage supervisé) avec le dataset `credit-g`
-2. **Segmentation de clients pour recommandation de produits** (apprentissage non supervisé) avec le dataset `bank-marketing`
+2. **Distinction des espèces florales avec le cas d'usage Iris** (apprentissage non supervisé) avec le dataset `Iris`
 
 ## Prérequis
 
